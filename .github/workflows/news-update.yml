@@ -1,0 +1,39 @@
+name: Daily News Update
+
+on:
+  schedule:
+    - cron: '0 1 * * *'  # ทุกวัน 08:00 เวลาไทย (UTC 01:00)
+  workflow_dispatch:
+
+jobs:
+  update-news:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: |
+          pip install requests
+          
+      - name: Run News Agency
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd news-agency
+          export GITHUB_TOKEN="$GITHUB_TOKEN"
+          bash scripts/daily-update.sh
+          
+      - name: Commit and push updates
+        run: |
+          cd news-agency
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add output/index.html
+          git diff --staged --quiet || git commit -m "Update news: $(date +%Y-%m-%d)"
+          git push

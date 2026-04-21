@@ -1,0 +1,444 @@
+#!/usr/bin/env python3
+"""
+บกลายจุด (BokLayJood) - บรรณาธิการ
+หน้าที่: ควบคุมและสร้าง HTML template หลัก
+- ออกแบบ Template หลัก
+- กำหนด CSS Framework
+- สร้าง Component ที่ใช้ซ้ำ
+"""
+
+from pathlib import Path
+from datetime import datetime
+
+TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
+OUTPUT_DIR = Path(__file__).parent.parent / "output"
+
+def generate_base_template():
+    """สร้าง HTML Template หลัก"""
+    
+    template = '''<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="สำนักข่าวบุญมา - ข่าวกฎหมายไทยอัพเดทล่าสุด ตรวจสอบโดย AI">
+    <meta name="keywords" content="กฎหมายไทย, ราชกิจจานุเบกษา, ข่าวกฎหมาย, Thailand law">
+    <meta name="author" content="BoonMa News Agency">
+    
+    <title>สำนักข่าวบุญมา | ข่าวกฎหมายไทย</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {{
+            --primary: #1e3a5f;
+            --primary-light: #2d5a87;
+            --secondary: #3d7ab5;
+            --accent: #c9a227;
+            --accent-dark: #a68420;
+            --bg: #f8fafc;
+            --bg-alt: #eef2f7;
+            --card: #ffffff;
+            --text: #1a1a2e;
+            --text-secondary: #4a5568;
+            --text-muted: #718096;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            --radius: 12px;
+            --radius-sm: 8px;
+        }}
+        
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+        
+        html {{
+            scroll-behavior: smooth;
+        }}
+        
+        body {{
+            font-family: 'Sarabun', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            min-height: 100vh;
+        }}
+        
+        /* === Header === */
+        .site-header {{
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 50%, var(--secondary) 100%);
+            color: white;
+            padding: 3rem 1rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }}
+        
+        .site-header::before {{
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+            opacity: 0.5;
+        }}
+        
+        .header-content {{
+            position: relative;
+            z-index: 1;
+        }}
+        
+        .site-header h1 {{
+            font-size: 2.8rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.2);
+        }}
+        
+        .site-header .tagline {{
+            font-size: 1.2rem;
+            opacity: 0.95;
+            font-weight: 300;
+        }}
+        
+        .update-badge {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1.2rem;
+            padding: 0.6rem 1.2rem;
+            background: rgba(255,255,255,0.15);
+            border-radius: 3rem;
+            font-size: 0.9rem;
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }}
+        
+        .pulse-dot {{
+            width: 8px;
+            height: 8px;
+            background: #10b981;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }}
+        
+        @keyframes pulse {{
+            0%, 100% {{ opacity: 1; transform: scale(1); }}
+            50% {{ opacity: 0.5; transform: scale(1.2); }}
+        }}
+        
+        /* === Main Container === */
+        .main-container {{
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }}
+        
+        /* === Stats Bar === */
+        .stats-bar {{
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+            flex-wrap: wrap;
+        }}
+        
+        .stat-card {{
+            background: var(--card);
+            padding: 1.2rem 1.8rem;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            text-align: center;
+            min-width: 120px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }}
+        
+        .stat-card:hover {{
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }}
+        
+        .stat-value {{
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: var(--primary);
+            line-height: 1;
+        }}
+        
+        .stat-label {{
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 0.3rem;
+        }}
+        
+        /* === Team Banner === */
+        .team-banner {{
+            background: linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: var(--radius);
+            margin-bottom: 2rem;
+            text-align: center;
+        }}
+        
+        .team-banner strong {{
+            color: var(--accent);
+        }}
+        
+        /* === News Card === */
+        .news-card {{
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 1.8rem;
+            margin-bottom: 1.5rem;
+            box-shadow: var(--shadow);
+            border-left: 5px solid var(--accent);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }}
+        
+        .news-card::before {{
+            content: "";
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 100px;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(201,162,39,0.03));
+            pointer-events: none;
+        }}
+        
+        .news-card:hover {{
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+            border-left-color: var(--accent-dark);
+        }}
+        
+        .card-top {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }}
+        
+        .news-tag {{
+            background: var(--primary);
+            color: white;
+            padding: 0.3rem 0.9rem;
+            border-radius: 2rem;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }}
+        
+        .credibility {{
+            padding: 0.3rem 0.9rem;
+            border-radius: 2rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }}
+        
+        .credibility.high {{ background: #10b98120; color: #10b981; }}
+        .credibility.medium {{ background: #f59e0b20; color: #f59e0b; }}
+        .credibility.low {{ background: #ef444420; color: #ef4444; }}
+        
+        .news-headline {{
+            font-size: 1.35rem;
+            color: var(--primary);
+            margin-bottom: 0.8rem;
+            line-height: 1.45;
+            font-weight: 600;
+        }}
+        
+        .news-summary {{
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            line-height: 1.75;
+        }}
+        
+        .news-tldr {{
+            background: var(--bg-alt);
+            border-left: 3px solid var(--secondary);
+            padding: 0.8rem 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+            font-size: 0.95rem;
+        }}
+        
+        .key-points {{
+            list-style: none;
+            margin-bottom: 1.2rem;
+        }}
+        
+        .key-points li {{
+            padding: 0.35rem 0;
+            padding-left: 1.3rem;
+            position: relative;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }}
+        
+        .key-points li::before {{
+            content: "◆";
+            position: absolute;
+            left: 0;
+            color: var(--accent);
+            font-size: 0.7rem;
+            top: 0.45rem;
+        }}
+        
+        .news-meta {{
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 1rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            flex-wrap: wrap;
+        }}
+        
+        .action-buttons {{
+            display: flex;
+            gap: 0.8rem;
+            flex-wrap: wrap;
+        }}
+        
+        .btn {{
+            padding: 0.6rem 1.2rem;
+            border-radius: var(--radius-sm);
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            font-family: inherit;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }}
+        
+        .btn-primary {{
+            background: var(--primary);
+            color: white;
+            text-decoration: none;
+        }}
+        
+        .btn-primary:hover {{
+            background: var(--primary-light);
+        }}
+        
+        .btn-outline {{
+            background: white;
+            color: var(--primary);
+            border: 1.5px solid var(--primary);
+        }}
+        
+        .btn-outline:hover {{
+            background: var(--primary);
+            color: white;
+        }}
+        
+        /* === Footer === */
+        .site-footer {{
+            text-align: center;
+            padding: 3rem 1rem;
+            margin-top: 3rem;
+            background: var(--primary);
+            color: white;
+        }}
+        
+        .footer-team {{
+            margin-bottom: 1rem;
+            opacity: 0.9;
+        }}
+        
+        .footer-credits {{
+            font-size: 0.85rem;
+            opacity: 0.7;
+        }}
+        
+        /* === Animations === */
+        @keyframes fadeInUp {{
+            from {{ opacity: 0; transform: translateY(30px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+        
+        .news-card {{
+            animation: fadeInUp 0.5s ease forwards;
+        }}
+        
+        .news-card:nth-child(1) {{ animation-delay: 0.1s; }}
+        .news-card:nth-child(2) {{ animation-delay: 0.2s; }}
+        .news-card:nth-child(3) {{ animation-delay: 0.3s; }}
+        .news-card:nth-child(4) {{ animation-delay: 0.4s; }}
+        .news-card:nth-child(5) {{ animation-delay: 0.5s; }}
+        
+        /* === Responsive === */
+        @media (max-width: 768px) {{
+            .site-header h1 {{ font-size: 2rem; }}
+            .stats-bar {{ gap: 1rem; }}
+            .stat-card {{ min-width: 100px; padding: 1rem; }}
+            .news-card {{ padding: 1.3rem; }}
+            .card-top {{ flex-direction: column; align-items: flex-start; }}
+        }}
+    </style>
+</head>
+<body>
+    <!-- Header injected by publisher.py -->
+    
+    <!-- Main Content injected by publisher.py -->
+    
+    <!-- Footer injected by publisher.py -->
+</body>
+</html>'''
+    
+    return template
+
+def run_controller():
+    """ฟังก์ชันหลัก - บกลายจุดสร้าง Template"""
+    print("=" * 60)
+    print("📐 บกลายจุดเริ่มทำงาน - สร้าง HTML Template หลัก")
+    print("=" * 60)
+    
+    TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # สร้าง base.html
+    template_content = generate_base_template()
+    base_html_file = TEMPLATE_DIR / "base.html"
+    with open(base_html_file, "w", encoding="utf-8") as f:
+        f.write(template_content)
+    
+    print(f"\n💾 บันทึก Template ที่: {base_html_file}")
+    print("📋 Template ประกอบด้วย:")
+    print("   - CSS Variables สำหรับสีและขนาด")
+    print("   - Responsive Design")
+    print("   - Animation Effects")
+    print("   - News Card Component")
+    print("   - Stats Bar")
+    print("   - Footer")
+    
+    return {
+        "status": "success",
+        "template_file": str(base_html_file),
+        "components": [
+            "header",
+            "stats-bar", 
+            "news-card",
+            "action-buttons",
+            "footer"
+        ]
+    }
+
+if __name__ == "__main__":
+    result = run_controller()
