@@ -10,8 +10,8 @@
 from pathlib import Path
 from datetime import datetime
 
-TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
-OUTPUT_DIR = Path(__file__).parent.parent / "output"
+TEMPLATE_DIR = Path(__file__).parent.parent.parent / "templates"
+OUTPUT_DIR = Path(__file__).parent.parent.parent / "output"
 
 def generate_base_template():
     """สร้าง HTML Template หลัก"""

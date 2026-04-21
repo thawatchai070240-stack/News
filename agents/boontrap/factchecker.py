@@ -13,9 +13,10 @@ import sys
 import re
 from datetime import datetime
 from pathlib import Path
-
-WRITTEN_DATA_DIR = Path(__file__).parent.parent / "data" / "written"
-VERIFIED_DATA_DIR = Path(__file__).parent.parent / "data" / "verified"
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.helpers import save_json, load_json
+WRITTEN_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "written"
+VERIFIED_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "verified"
 OUTPUT_FILE = VERIFIED_DATA_DIR / "boontrap_verified.json"
 
 def load_boonsong_articles():

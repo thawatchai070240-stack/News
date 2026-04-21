@@ -12,9 +12,11 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils.helpers import save_json, load_json, generate_id
 
-RAW_DATA_DIR = Path(__file__).parent.parent / "data" / "raw"
-WRITTEN_DATA_DIR = Path(__file__).parent.parent / "data" / "written"
+RAW_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "raw"
+WRITTEN_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "written"
 OUTPUT_FILE = WRITTEN_DATA_DIR / "boonsong_articles.json"
 
 def load_boonma_data():

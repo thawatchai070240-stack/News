@@ -11,8 +11,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-VERIFIED_DATA_DIR = Path(__file__).parent.parent / "data" / "verified"
-OUTPUT_DIR = Path(__file__).parent.parent / "output"
+VERIFIED_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "verified"
+OUTPUT_DIR = Path(__file__).parent.parent.parent / "output"
 
 def load_verified_data():
     """โหลดข้อมูลที่ผ่านการตรวจ"""
@@ -436,7 +436,7 @@ def run_publisher():
     
     # แปลงรูปแบบสำหรับ HTML
     # รวมข้อมูลจาก boonsong กับ boontrap
-    boonsong_file = Path(__file__).parent.parent / "data" / "written" / "boonsong_articles.json"
+    boonsong_file = Path(__file__).parent.parent.parent / "data" / "written" / "boonsong_articles.json"
     boonsong_data = json.load(open(boonsong_file)) if boonsong_file.exists() else {"articles": []}
     
     articles_for_html = []
@@ -447,7 +447,7 @@ def run_publisher():
                 (a for a in boonsong_data.get("articles", []) if a.get("id") == v.get("article_id")),
                 {}
             )
-            combined = {{**article_data, **v}}
+            combined = {**article_data, **v}
             articles_for_html.append(combined)
     
     # สร้าง HTML

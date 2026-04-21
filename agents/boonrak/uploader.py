@@ -12,7 +12,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-OUTPUT_DIR = Path(__file__).parent.parent / "output"
+OUTPUT_DIR = Path(__file__).parent.parent.parent / "output"
 GITHUB_REPO = "thawatchai070240-stack/News"
 GITHUB_BRANCH = "main"
 

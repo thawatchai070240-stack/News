@@ -46,7 +46,7 @@ SOURCES = {
     }
 }
 
-RAW_DATA_DIR = Path(__file__).parent.parent / "data" / "raw"
+RAW_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "raw"
 OUTPUT_FILE = RAW_DATA_DIR / "boonma_findings.json"
 
 def fetch_ratchakitcha():
