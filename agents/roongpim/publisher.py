@@ -422,33 +422,43 @@ def run_publisher():
     # โหลดข้อมูลที่ผ่านการตรวจ
     verified_data = load_verified_data()
     if not verified_data:
-        print("⚠️ ไม่พบข้อมูลที่ผ่านการตรวจ กรุณาให้บุญตรวจทำงานก่อน")
+        print("⚠️ ไม่พบข้อมูลที่ผ่านการตรวจ กรุณาให้บุญส่งทำงานก่อน")
         return {"status": "no_data", "html_file": None}
     
+    # รองรับทั้ง format เก่า (verifications) และใหม่ (articles)
     verifications = verified_data.get("verifications", [])
-    verified_articles = [v for v in verifications if v["status"] == "verified"]
+    articles = verified_data.get("articles", [])
     
-    print(f"\n📰 พบ {len(verified_articles)} บทความที่ผ่านการตรวจ")
+    if verifications:
+        # Format เก่า
+        verified_articles = [v for v in verifications if v.get("status") == "verified"]
+        print(f"\n📰 พบ {len(verified_articles)} บทความที่ผ่านการตรวจ (format เก่า)")
+        
+        # แปลงรูปแบบสำหรับ HTML
+        boonsong_file = Path(__file__).parent.parent.parent / "data" / "written" / "boonsong_articles.json"
+        boonsong_data = json.load(open(boonsong_file)) if boonsong_file.exists() else {"articles": []}
+        
+        articles_for_html = []
+        for v in verifications:
+            if v.get("status") == "verified":
+                article_data = next(
+                    (a for a in boonsong_data.get("articles", []) if a.get("id") == v.get("article_id")),
+                    {}
+                )
+                combined = {**article_data, **v}
+                articles_for_html.append(combined)
+    elif articles:
+        # Format ใหม่ (บุญส่งเขียนตรง)
+        verified_articles = [a for a in articles if a.get("status") in ("written", "verified")]
+        print(f"\n📰 พบ {len(verified_articles)} บทความที่ผ่านการตรวจ (format ใหม่)")
+        articles_for_html = verified_articles
+    else:
+        verified_articles = []
+        articles_for_html = []
     
     if not verified_articles:
         print("⚠️ ไม่มีบทความที่ผ่านการตรวจ")
         return {"status": "no_verified", "html_file": None}
-    
-    # แปลงรูปแบบสำหรับ HTML
-    # รวมข้อมูลจาก boonsong กับ boontrap
-    boonsong_file = Path(__file__).parent.parent.parent / "data" / "written" / "boonsong_articles.json"
-    boonsong_data = json.load(open(boonsong_file)) if boonsong_file.exists() else {"articles": []}
-    
-    articles_for_html = []
-    for v in verifications:
-        if v["status"] == "verified":
-            # หาข้อมูลต้นฉบับจาก boonsong
-            article_data = next(
-                (a for a in boonsong_data.get("articles", []) if a.get("id") == v.get("article_id")),
-                {}
-            )
-            combined = {**article_data, **v}
-            articles_for_html.append(combined)
     
     # สร้าง HTML
     run_at = verified_data.get("run_at", datetime.now().isoformat())

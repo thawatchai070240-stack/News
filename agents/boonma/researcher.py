@@ -1,24 +1,22 @@
 #!/usr/bin/env python3
 """
 บุญมา (BoonMa) - นักหาข้อมูลกฎหมายไทย
-หน้าที่: ค้นหากฎหมายไทยอัพเดทใหม่จากแหล่งที่เข้าถึงได้
+หน้าที่: ค้นหากฎหมายไทยอัพเดทใหม่จากราชกิจจานุเบกษา
 
-แหล่งข้อมูลที่ยืนยันว่าใช้ได้:
-1. rd.go.th/rss.xml - กรมสรรพากร (30 รายการ ภาษี/ระเบียบ)
-2. thaigov.go.th/sitemap.xml - เว็บรัฐบาลไทย (53 หน้า)
-3. thaigov.go.th/news/{politics,economy,region} - ข่าวรัฐบาล
-4. ฐานข้อมูลกฎหมายอื่นๆ ที่เข้าถึงได้
+แหล่งข้อมูล: www.soc.go.th (ไม่ต้องใช้ Token)
+- หน้า "กฎหมายสำคัญที่ประกาศในราชกิจจานุเบกษา"
+- ข้อมูลทั้งหมดอยู่ใน HTML (ไม่ต้องใช้ JavaScript/AJAX)
+- ดึงรายละเอียดแต่ละฉบับ (สาระสำคัญ, ผู้เกี่ยวข้อง, วันที่มีผล, PDF)
 """
 
 import json
-import sys
 import re
-import gzip
+import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
-from xml.etree.ElementTree import fromstring
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from utils.helpers import save_json, generate_id
@@ -27,380 +25,281 @@ RAW_DATA_DIR = Path(__file__).parent.parent.parent / "data" / "raw"
 OUTPUT_FILE = RAW_DATA_DIR / "boonma_findings.json"
 
 # ============================================================
-# แหล่งข้อมูลที่รองรับ (เฉพาะที่ยืนยันว่าเข้าถึงได้)
+# แหล่งข้อมูลจาก www.soc.go.th (ไม่ต้องใช้ Token)
 # ============================================================
-RSS_FEEDS = [
-    {
-        "key": "rd_rss",
-        "name": "กรมสรรพากร",
-        "url": "https://www.rd.go.th/rss.xml",
-        "base_url": "https://www.rd.go.th",
-        "type": "tax_regulation",
-        "description": "ประกาศระเบียบภาษี กำหนดยื่นแบบ ข่าวสรรพากร"
-    },
-]
+SOURCE_CONFIG = {
+    "base_url": "https://www.soc.go.th",
+    "list_page": "/?p=7548",
+    "name": "สำนักเลขาธิการคณะรัฐมนตรี",
+    "type": "government_law",
+    "description": "กฎหมายสำคัญที่ประกาศในราชกิจจานุเบกษา จากเว็บ สลค.",
+}
 
-SITEMAP_SOURCES = [
-    {
-        "key": "thaigov_sitemap",
-        "name": "เว็บรัฐบาลไทย - Sitemap",
-        "url": "https://www.thaigov.go.th/sitemap.xml",
-        "base_url": "https://www.thaigov.go.th",
-        "type": "government_policy",
-        "description": "แผนงาน นโยบายรัฐบาล จากเว็บรัฐบาลไทย"
-    },
-]
-
-HTML_NEWS_SOURCES = [
-    {
-        "key": "thaigov_news",
-        "name": "ข่าวรัฐบาลไทย",
-        "url": "https://www.thaigov.go.th/th/news",
-        "base_url": "https://www.thaigov.go.th",
-        "type": "government_news",
-        "description": "ข่าวจากเว็บรัฐบาลไทย"
-    },
-]
-
-
-def fetch_url(url, timeout=15):
-    """ดึงข้อมูลจาก URL พร้อมรองรับ gzip"""
+# ============================================================
+# ดึง HTML จากหน้าเว็บ
+# ============================================================
+def fetch_html(url_path, timeout=20):
+    """ดึง HTML จาก www.soc.go.th"""
+    url = SOURCE_CONFIG["base_url"] + url_path
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'th,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
+        'Accept-Language': 'th-TH,th;q=0.9,en;q=0.8',
     }
+    req = Request(url, headers=headers)
     try:
-        req = Request(url, headers=headers)
-        with urlopen(req, timeout=timeout) as resp:
-            status = resp.status
-            ct = resp.headers.get('Content-Type', '')
-            ce = resp.headers.get('Content-Encoding', '')
-            content = resp.read()
-            
-            # Decompress if needed
-            if ce == 'gzip' or (content[:2] == b'\x1f\x8b'):
-                content = gzip.decompress(content)
-            
-            # Decode
-            if isinstance(content, bytes):
-                charset = 'utf-8'
-                if 'charset=' in ct:
-                    charset = ct.split('charset=')[-1].split(';')[0].strip()
-                try:
-                    text = content.decode(charset)
-                except:
-                    text = content.decode('utf-8', errors='replace')
-            else:
-                text = content
-            
-            return {
-                "status_code": status,
-                "content_type": ct,
-                "content_length": len(content),
-                "text": text,  # ไม่ truncate เพราะ XML ต้อง parse เต็ม
-                "text_preview": text[:500],
-                "accessible": True,
-                "error": None
-            }
+        resp = urlopen(req, timeout=timeout)
+        raw = resp.read()
+        try:
+            html = raw.decode('utf-8')
+        except UnicodeDecodeError:
+            html = raw.decode('utf-8', errors='replace')
+        return html
     except HTTPError as e:
-        return {"accessible": False, "error": f"HTTP {e.code}", "status_code": e.code, "content_length": 0}
-    except URLError as e:
-        return {"accessible": False, "error": str(e.reason)[:50], "status_code": 0, "content_length": 0}
+        print(f"  ERROR: HTTP {e.code} - {e.reason}")
+        return None
     except Exception as e:
-        return {"accessible": False, "error": str(e)[:80], "status_code": 0, "content_length": 0}
+        print(f"  ERROR: {e}")
+        return None
 
+# ============================================================
+# แปลงเลขไทยเป็นอารบิก
+# ============================================================
+def thai_to_arabic(text):
+    """แปลงตัวเลขไทยเป็นอารบิก"""
+    thai_nums = "๐๑๒๓๔๕๖๗๘๙"
+    arabic_nums = "0123456789"
+    result = text
+    for t, a in zip(thai_nums, arabic_nums):
+        result = result.replace(t, a)
+    return result
 
-def parse_rss_feed(url, base_url, source_key, source_name, source_type, description):
-    """ดึงข้อมูลจาก RSS Feed"""
-    results = []
-    data = fetch_url(url)
-    
-    if not data["accessible"]:
-        return [{
-            "id": generate_id(),
-            "source": source_key,
-            "source_name": source_name,
-            "url": url,
-            "status": "error",
-            "error": data.get("error", "unknown"),
-            "fetched_at": datetime.now().isoformat()
-        }]
-    
+def thai_year_to_ad(thai_year_str):
+    """แปลงปี พ.ศ. ไทยเป็น ค.ศ."""
     try:
-        text = data["text"]
-        if not text.strip().startswith('<?xml') and not text.strip().startswith('<rss'):
-            # Not RSS - might be HTML redirect
-            return [{
-                "id": generate_id(),
-                "source": source_key,
-                "source_name": source_name,
-                "url": url,
-                "status": "error",
-                "error": "Not an RSS feed",
-                "fetched_at": datetime.now().isoformat()
-            }]
-        
-        root = fromstring(text.encode() if isinstance(text, str) else text)
-        
-        # Handle RSS 2.0
-        items = root.findall('.//item')
-        if not items:
-            # Handle Atom
-            items = root.findall('.//entry')
-        
-        for item in items:
-            title = item.find('title')
-            link = item.find('link')
-            desc = item.find('description') or item.find('summary') or item.find('content')
-            pubdate = item.find('pubDate') or item.find('published') or item.find('updated')
-            
-            title_text = title.text.strip() if title is not None and title.text else ""
-            link_text = link.text if link is not None and link.text else ""
-            
-            # Handle relative links
-            if link_text.startswith('/'):
-                link_text = base_url + link_text
-            elif link_text and not link_text.startswith('http'):
-                link_text = base_url + '/' + link_text
-            
-            desc_text = desc.text[:200] if desc is not None and desc.text else ""
-            pubdate_text = pubdate.text if pubdate is not None and pubdate.text else ""
-            
-            if title_text:
-                results.append({
-                    "id": generate_id(),
-                    "source": source_key,
-                    "source_name": source_name,
-                    "title": title_text,
-                    "url": link_text or url,
-                    "summary": desc_text,
-                    "published": pubdate_text,
-                    "status": "found",
-                    "type": source_type,
-                    "description": description,
-                    "fetched_at": datetime.now().isoformat(),
-                    "content_length": data.get("content_length", 0)
-                })
-        
-    except Exception as e:
-        return [{
-            "id": generate_id(),
-            "source": source_key,
-            "source_name": source_name,
-            "url": url,
-            "status": "error",
-            "error": f"Parse error: {str(e)[:50]}",
-            "fetched_at": datetime.now().isoformat()
-        }]
-    
-    return results
+        # Extract number from Thai string
+        num = int(thai_to_arabic(thai_year_str))
+        return num - 543
+    except:
+        return None
 
+def ad_year_to_thai_year(ad_year):
+    """แปลง ค.ศ. เป็น พ.ศ. ไทย (สตริงง่าย)"""
+    thai_year = ad_year + 543
+    # แปลงเป็นเลขไทย
+    thai_nums = "๐๑๒๓๔๕๖๗๘๙"
+    result = ""
+    for d in str(thai_year):
+        result += thai_nums[int(d)]
+    return result
 
-def parse_sitemap(url, base_url, source_key, source_name, source_type, description):
-    """ดึงข้อมูลจาก Sitemap XML"""
-    results = []
-    data = fetch_url(url)
+# ============================================================
+# ดึงรายการกฎหมายจากหน้าเว็บ (HTML ทั้งหมด)
+# ============================================================
+def extract_laws_from_html(html):
+    """ดึงกฎหมายทั้งหมดจาก HTML"""
+    laws_by_year = {}
     
-    if not data["accessible"]:
-        return [{
-            "id": generate_id(),
-            "source": source_key,
-            "source_name": source_name,
-            "url": url,
-            "status": "error",
-            "error": data.get("error", "unknown"),
-            "fetched_at": datetime.now().isoformat()
-        }]
+    # Pattern: กฎหมายแต่ละฉบับอยู่ใน div ที่มี class="col-md-12 fiscal_year fiscal_YYYY"
+    # ลิงค์อยู่ในรูปแบบ: <a href="/?page_id=2375&id=XXX" ...> ชื่อกฎหมาย </a>
     
-    try:
-        text = data["text"]
-        root = fromstring(text.encode() if isinstance(text, str) else text)
-        ns = {'sm': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
+    fiscal_pattern = r'<div class="col-md-12 fiscal_year fiscal_(\d{4})">\s*<a[^>]+href=["\']([^"\']*id=(\d+)[^"\']*)["\'][^>]*>\s*([^<]+)\s*</a>'
+    matches = re.findall(fiscal_pattern, html, re.DOTALL)
+    
+    for year_ad, href, law_id, title in matches:
+        year_ad_int = int(year_ad)
+        year_thai = year_ad_int + 543  # พ.ศ.
         
-        urls = root.findall('sm:url', ns)
-        if not urls:
-            urls = root.findall('url')
+        if year_ad_int not in laws_by_year:
+            laws_by_year[year_ad_int] = []
         
-        for u in urls:
-            loc = u.find('sm:loc', ns) or u.find('loc')
-            lastmod = u.find('sm:lastmod', ns) or u.find('lastmod')
+        # Clean title
+        clean_title = re.sub(r'<[^>]+>', '', title).strip()
+        clean_title = ' '.join(clean_title.split())
+        
+        law = {
+            "id": f"soc_{law_id}",
+            "detail_url": href,
+            "title": clean_title,
+            "year_ad": year_ad_int,
+            "year_thai": year_thai,
+        }
+        laws_by_year[year_ad_int].append(law)
+    
+    return laws_by_year
+
+# ============================================================
+# ดึงรายละเอียดกฎหมายจากหน้า detail
+# ============================================================
+def get_law_detail(html, law_info):
+    """ดึงรายละเอียด (สาระสำคัญ, ผู้เกี่ยวข้อง, วันที่, PDF) จากหน้า detail"""
+    
+    result = law_info.copy()
+    
+    # ดึงชื่อกฎหมายจาก paragraph
+    p_match = re.search(r'<p[^>]*>\s*([^<]*พระราชบัญญัติ[^<]+)\s*</p>', html)
+    if p_match:
+        result["full_title"] = p_match.group(1).strip()
+    
+    # ดึงตารางรายละเอียด
+    table_pattern = r'<table[^>]*>(.*?)</table>'
+    table_match = re.search(table_pattern, html, re.DOTALL)
+    
+    if table_match:
+        table_html = table_match.group(1)
+        
+        # ดึง key-value จาก td โดยดึง span ข้างใน
+        # Key อยู่ในรูปแบบ: <span><b>ชื่อหัวข้อ</b></span>
+        # Value อยู่ในรูปแบบ: <span>ค่าข้อมูล</span>
+        row_pattern = r'<tr[^>]*>(.*?)</tr>'
+        rows = re.findall(row_pattern, table_html, re.DOTALL)
+        
+        for row in rows:
+            # ดึง key (ใน td แรก > span > b)
+            key_match = re.search(r'<span><b>([^<]+)</b></span>', row)
+            if not key_match:
+                continue
+            key = key_match.group(1).strip()
             
-            if loc is not None and loc.text:
-                url_text = loc.text.strip()
-                lastmod_text = lastmod.text if lastmod is not None else ""
+            # ดึง value - get all TDs and use the second one
+            tds = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
+            if len(tds) < 2:
+                continue
+            value = re.sub(r'<[^>]+>', '', tds[1]).strip()
+            value = ' '.join(value.split())
+            
+            if not value:
+                continue
                 
-                results.append({
-                    "id": generate_id(),
-                    "source": source_key,
-                    "source_name": source_name,
-                    "title": f"หน้า: {url_text.split('/')[-1][:50]}",
-                    "url": url_text,
-                    "lastmod": lastmod_text,
-                    "status": "found",
-                    "type": source_type,
-                    "description": description,
-                    "fetched_at": datetime.now().isoformat(),
-                    "content_length": data.get("content_length", 0)
-                })
+            if 'สาระสำคัญ' in key:
+                result["summary"] = value
+            elif 'ผู้ที่เกี่ยวข้อง' in key:
+                result["applies_to"] = value
+            elif 'วันที่มีผลบังคับ' in key:
+                result["effective_date"] = value
+            elif 'วันที่ประกาศ' in key or 'วันประกาศ' in key:
+                result["gazette_date"] = value
         
-    except Exception as e:
-        return [{
-            "id": generate_id(),
-            "source": source_key,
-            "source_name": source_name,
-            "url": url,
-            "status": "error",
-            "error": f"Sitemap parse error: {str(e)[:50]}",
-            "fetched_at": datetime.now().isoformat()
-        }]
+        # หา PDF link จาก table - มักจะอยู่ในปุ่มหรือ link
+        pdf_pattern = r'href=["\']([^"\']*(?:ratchakitcha|documents)[^"\']*\.pdf[^"\']*)["\']'
+        pdf_match = re.search(pdf_pattern, table_html, re.IGNORECASE)
+        if pdf_match:
+            result["pdf_url"] = pdf_match.group(1)
     
-    return results
+    # หา PDF link ที่ไหนสักแห่งในหน้า
+    if "pdf_url" not in result:
+        pdf_pattern = r'href=["\']([^"\']*ratchakitcha[^"\']*\.pdf[^"\']*)["\']'
+        pdf_match = re.search(pdf_pattern, html)
+        if pdf_match:
+            result["pdf_url"] = pdf_match.group(1)
+    
+    # หา link อ้างอิง
+    if "source_url" not in result:
+        ref_pattern = r'href=["\']([^"\']*\?page_id=2375&id=\d+[^"\']*)["\']'
+        ref_match = re.search(ref_pattern, html)
+        if ref_match:
+            result["source_url"] = SOURCE_CONFIG["base_url"] + ref_match.group(1)
+    
+    return result
 
-
-def parse_html_news(url, base_url, source_key, source_name, source_type, description):
-    """ดึงข่าวจาก HTML page (heuristic extraction)"""
-    results = []
-    data = fetch_url(url)
-    
-    if not data["accessible"]:
-        return [{
-            "id": generate_id(),
-            "source": source_key,
-            "source_name": source_name,
-            "url": url,
-            "status": "error",
-            "error": data.get("error", "unknown"),
-            "fetched_at": datetime.now().isoformat()
-        }]
-    
-    text = data.get("text", "")
-    
-    # Extract links with news keywords - ใช้ text_preview ที่ truncate แล้วสำหรับ HTML
-    text_for_extract = data.get("text_preview", text[:10000])
-    patterns = [
-        r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>\s*<[^>]+>\s*([^<]*(?:ประกาศ|พระราชกำหนด|ระเบียบ|กฎหมาย|ข่าว|แถลง)[^<]*)\s*</a>',
-        r'<h[234][^>]*>\s*<a[^>]+href=["\']([^"\']+)["\'][^>]*>\s*([^<]{15,100})\s*</a>',
-        r'<a[^>]+href=["\']([^"\']*(?:news|ข่าว|announce)[^"\']*)["\'][^>]*>\s*([^<]{15,100})\s*</a>',
-    ]
-    
-    seen_urls = set()
-    for pattern in patterns:
-        for m in re.finditer(pattern, text_for_extract, re.IGNORECASE):
-            link = m.group(1).strip()
-            title = re.sub(r'<[^>]+>', '', m.group(2)).strip()
-            
-            if title and len(title) > 10 and link not in seen_urls:
-                seen_urls.add(link)
-                
-                # Make absolute URL
-                if link.startswith('/'):
-                    link = base_url.rstrip('/') + link
-                elif not link.startswith('http'):
-                    link = base_url.rstrip('/') + '/' + link
-                
-                results.append({
-                    "id": generate_id(),
-                    "source": source_key,
-                    "source_name": source_name,
-                    "title": title,
-                    "url": link,
-                    "status": "found",
-                    "type": source_type,
-                    "description": description,
-                    "fetched_at": datetime.now().isoformat(),
-                    "content_length": data.get("content_length", 0)
-                })
-    
-    return results
-
-
-def run_research():
-    """ฟังก์ชันหลัก"""
+# ============================================================
+# ฟังก์ชันหลัก - รันบุญมา
+# ============================================================
+def run_boonma():
+    """ฟังก์ชันหลัก - ดึงกฎหมายจาก สลค. ไม่ต้องใช้ Token"""
     print("=" * 60)
-    print("📡 บุญมาเริ่มทำงาน - ค้นหากฎหมายไทยอัพเดทใหม่")
+    print("📡 บุญมาเริ่มทำงาน - ดึงข้อมูลกฎหมายจาก สลค.")
     print("=" * 60)
     
-    RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    # ดึงหน้ารายการ
+    print("\n📋 ดึงหน้ารายการกฎหมาย...")
+    html = fetch_html(SOURCE_CONFIG["list_page"])
+    if not html:
+        print("❌ ไม่สามารถดึงหน้าเว็บได้")
+        return {"status": "error", "message": "Cannot fetch page"}
     
-    all_results = {
+    # ดึงกฎหมายทั้งหมด
+    laws_by_year = extract_laws_from_html(html)
+    
+    total_laws = sum(len(laws) for laws in laws_by_year.values())
+    print(f"✅ พบกฎหมายทั้งหมด {total_laws} ฉบับ")
+    
+    for year in sorted(laws_by_year.keys(), reverse=True):
+        print(f"   ปี {year+543} (พ.ศ.): {len(laws_by_year[year])} ฉบับ")
+    
+    # ใช้ปีล่าสุดที่มีข้อมูล
+    if not laws_by_year:
+        print("❌ ไม่พบข้อมูลกฎหมาย")
+        return {"status": "no_data"}
+    
+    # เลือกปีล่าสุด (ปี ค.ศ. สูงสุด)
+    latest_year = max(laws_by_year.keys())
+    latest_laws = laws_by_year[latest_year]
+    print(f"\n📌 เลือกปีล่าสุด: พ.ศ. {latest_year + 543} ({len(latest_laws)} ฉบับ)")
+    
+    # ดึงรายละเอียดแต่ละฉบับ
+    detailed_laws = []
+    fetched_at = datetime.now().isoformat()
+    
+    print("\n📄 ดึงรายละเอียดแต่ละฉบับ...")
+    for i, law in enumerate(latest_laws):
+        print(f"  [{i+1}/{len(latest_laws)}] {law['title'][:50]}...")
+        
+        detail_html = fetch_html(law["detail_url"])
+        if detail_html:
+            detail = get_law_detail(detail_html, law)
+            detailed_laws.append(detail)
+        else:
+            detailed_laws.append(law)
+        
+        time.sleep(0.2)  # รอบ้างไม่ให้เร็วเกิน
+    
+    # เพิ่มข้อมูลเวลา
+    for law in detailed_laws:
+        law["fetched_at"] = fetched_at
+        law["source"] = "soc_gov_th"
+        law["source_name"] = SOURCE_CONFIG["name"]
+        law["url"] = SOURCE_CONFIG["base_url"] + SOURCE_CONFIG["list_page"]
+    
+    # สร้างผลลัพธ์
+    findings = {
         "agent": "บุญมา (BoonMa)",
         "role": "นักหาข้อมูลกฎหมาย",
-        "run_at": datetime.now().isoformat(),
-        "sources_checked": [],
-        "findings": [],
-        "status": "success"
+        "run_at": fetched_at,
+        "source": SOURCE_CONFIG,
+        "total_laws": len(detailed_laws),
+        "year": latest_year + 543,
+        "findings": detailed_laws,
+        "status": "success" if detailed_laws else "no_data",
     }
     
-    total_found = 0
-    total_errors = 0
+    # บันทึก
+    RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        json.dump(findings, f, ensure_ascii=False, indent=2)
     
-    # 1. RSS Feeds (แหล่งที่ใช้ได้ดีที่สุด)
-    print("\n📋 [1] ดึงข้อมูลจาก RSS Feeds...")
-    for src in RSS_FEEDS:
-        print(f"  ▶ {src['name']} ({src['url'][:50]})", end=" ... ")
-        findings = parse_rss_feed(
-            src['url'], src['base_url'],
-            src['key'], src['name'], src['type'], src['description']
-        )
-        found = sum(1 for f in findings if f.get("status") == "found")
-        errors = sum(1 for f in findings if f.get("status") == "error")
-        print(f"{'✅ ' + str(found) + ' รายการ' if found else '❌ ' + str(errors) + ' error(s)'}")
-        all_results["findings"].extend(findings)
-        total_found += found
-        total_errors += errors
-        all_results["sources_checked"].append(src['key'])
+    print(f"\n✅ บุญมาเสร็จสิ้น - ได้ {len(detailed_laws)} ฉบับ")
+    print(f"📁 บันทึกที่: {OUTPUT_FILE}")
     
-    # 2. Sitemap Sources
-    print("\n📋 [2] ดึงข้อมูลจาก Sitemaps...")
-    for src in SITEMAP_SOURCES:
-        print(f"  ▶ {src['name']} ({src['url'][:50]})", end=" ... ")
-        findings = parse_sitemap(
-            src['url'], src['base_url'],
-            src['key'], src['name'], src['type'], src['description']
-        )
-        found = sum(1 for f in findings if f.get("status") == "found")
-        print(f"{'✅ ' + str(found) + ' หน้า' if found else '❌ ไม่พบ'}")
-        all_results["findings"].extend(findings)
-        total_found += found
-        all_results["sources_checked"].append(src['key'])
-    
-    # 3. HTML News Sources (fallback - อาจเจอ JS-rendered content)
-    print("\n📋 [3] ดึงข้อมูลจาก HTML News Pages...")
-    for src in HTML_NEWS_SOURCES:
-        print(f"  ▶ {src['name']} ({src['url'][:50]})", end=" ... ")
-        findings = parse_html_news(
-            src['url'], src['base_url'],
-            src['key'], src['name'], src['type'], src['description']
-        )
-        found = sum(1 for f in findings if f.get("status") == "found")
-        print(f"{'✅ ' + str(found) + ' รายการ' if found else '⚠️ 0 (อาจเป็น JavaScript)'}")
-        all_results["findings"].extend(findings)
-        total_found += found
-        all_results["sources_checked"].append(src['key'])
-    
-    # บันทึกผลลัพธ์
-    save_json(all_results, OUTPUT_FILE)
-    print(f"\n💾 บันทึกข้อมูลที่: {OUTPUT_FILE}")
-    
-    accessible = [f for f in all_results["findings"] if f.get("status") == "found"]
-    errors = [f for f in all_results["findings"] if f.get("status") == "error"]
-    
-    print(f"\n📊 สรุป: พบ {total_found} รายการจาก {len(accessible)} แหล่ง")
-    print(f"   ✅ เข้าถึงได้: {len(accessible)} แหล่ง")
-    print(f"   ❌ บล็อค/error: {len(errors)} แหล่ง")
-    
-    if accessible:
-        print(f"\n📰 ตัวอย่างข่าวที่พบ:")
-        for item in accessible[:5]:
-            print(f"   • {item.get('title', '')[:60]}")
-            print(f"     จาก: {item.get('source_name', '')}")
-            print(f"     URL: {item.get('url', '')[:60]}")
-    
-    return all_results
+    return findings
 
-
+# ============================================================
+# Test ดึงข้อมูล
+# ============================================================
 if __name__ == "__main__":
-    result = run_research()
-    sys.exit(0 if result["status"] == "success" else 1)
+    result = run_boonma()
+    
+    if result.get("findings"):
+        print(f"\n📋 ตัวอย่าง 3 ฉบับแรก:")
+        for law in result["findings"][:3]:
+            print(f"\n  [{law['id']}] {law.get('title', 'N/A')[:70]}")
+            if "summary" in law:
+                print(f"     สาระ: {law['summary'][:100]}...")
+            if "applies_to" in law:
+                print(f"     ผู้เกี่ยวข้อง: {law['applies_to'][:60]}...")
+            if "effective_date" in law:
+                print(f"     มีผล: {law['effective_date']}")
+            if "pdf_url" in law:
+                print(f"     PDF: {law['pdf_url'][:80]}")
+    else:
+        print("\n⚠️ ไม่พบข้อมูล ลองตรวจสอบการเชื่อมต่ออินเทอร์เน็ต")
